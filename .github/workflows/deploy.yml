@@ -1,0 +1,183 @@
+name: Deploy Knowledge Base
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - .gitignore
+      - README.md
+      - CONTRIBUTING.md
+      - LICENSE
+      - LICENSE.txt
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths-ignore:
+      - .gitignore
+      - README.md
+      - CONTRIBUTING.md
+      - LICENSE
+      - LICENSE.txt
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: Force a deployment run in case of emergency
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    env:
+      URL_CHECKER_TIMEOUT: ${{ vars.URL_CHECKER_TIMEOUT || '10' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run linters
+        run: npm run lint:all
+
+      - name: Run URL checker with repository timeout
+        run: node script/url-checker.js -t "${URL_CHECKER_TIMEOUT}"
+
+      - name: Run remaining scripts in script folder
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            if [ "$(basename "$file")" != "url-checker.js" ]; then
+              node "$file"
+            fi
+          done < <(find script -type f -name "*.js" -print0)
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs: test
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build production site
+        env:
+          PATH_PREFIX: /${{ github.event.repository.name }}/
+        run: npm run eleventy:prod
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs:
+      - test
+      - build
+    if: ${{ github.event_name != 'pull_request' && needs.test.result == 'success' && needs.build.result == 'success' }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      issues: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download built site artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: _site-artifact
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Build deployment metadata
+        id: metadata
+        env:
+          DEPLOYMENT_OUTCOME: ${{ steps.deployment.outcome }}
+          DEPLOYED_URL: ${{ steps.deployment.outputs.page_url }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          today="$(date -u +%Y-%m-%d)"
+
+          if [ "${DEPLOYMENT_OUTCOME}" = "success" ]; then
+            status="succeeded"
+          else
+            status="failed"
+          fi
+
+          if [ -z "${DEPLOYED_URL}" ]; then
+            deployed_url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO_NAME}/"
+          else
+            deployed_url="${DEPLOYED_URL}"
+          fi
+
+          echo "today=${today}" >> "$GITHUB_OUTPUT"
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          echo "deployed_url=${deployed_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate GitHub CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | gh auth login --with-token
+
+      - name: Create deployment status issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "${{ steps.metadata.outputs.today }} - Deployment: ${{ steps.metadata.outputs.status }}" \
+            --body "URL: ${{ steps.metadata.outputs.deployed_url }}"
+
+      - name: Fail when deployment did not succeed
+        if: ${{ steps.deployment.outcome != 'success' }}
+        run: |
+          echo "Deployment failed"
+          exit 1
