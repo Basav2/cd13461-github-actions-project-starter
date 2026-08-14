@@ -112,6 +112,7 @@ jobs:
       - name: Build production site
         env:
           PATH_PREFIX: /${{ github.event.repository.name }}/
+          SKIP_PAGEFIND: 'true'
         run: npm run eleventy:prod
 
       - name: Verify built site directory

@@ -58,9 +58,13 @@ module.exports = config => {
 
   config.setLibrary('md', markdownLib);
 
-  config.on('eleventy.after', () => {
-    execSync(`npx pagefind --source _site --glob \"**/*.html\"`, { encoding: 'utf-8' })
-  });
+    config.on('eleventy.after', () => {
+      if (process.env.SKIP_PAGEFIND === 'true') {
+        return;
+      }
+
+      execSync(`npx pagefind --source _site --glob "**/*.html"`, { encoding: 'utf-8' });
+    });
 
   // Required for eleventy to run on GitHub Pages
   // as the site URL will be https://<username>.github.io/<repo>/index.html
