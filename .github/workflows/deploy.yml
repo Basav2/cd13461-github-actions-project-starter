@@ -185,6 +185,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh issue create \
+            --repo "${GITHUB_REPOSITORY}" \
             --title "${{ steps.metadata.outputs.today }} - Deployment: ${{ steps.metadata.outputs.status }}" \
             --body "URL: ${{ steps.metadata.outputs.deployed_url }}"
 
