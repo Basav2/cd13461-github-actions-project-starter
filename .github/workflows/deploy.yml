@@ -180,11 +180,6 @@ jobs:
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           echo "deployed_url=${deployed_url}" >> "$GITHUB_OUTPUT"
 
-      - name: Authenticate GitHub CLI
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: echo "$GH_TOKEN" | gh auth login --with-token
-
       - name: Create deployment status issue
         env:
           GH_TOKEN: ${{ github.token }}
