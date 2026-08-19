@@ -58,10 +58,21 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-20-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-node-modules-
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
       - name: Build native dependency (sharp)
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm rebuild sharp --foreground-scripts
 
       - name: Run linters
@@ -103,10 +114,21 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-20-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-node-modules-
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
       - name: Build native dependency (sharp)
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm rebuild sharp --foreground-scripts
 
       - name: Build production site
